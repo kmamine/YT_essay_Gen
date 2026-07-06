@@ -1,0 +1,54 @@
+llm:
+  primary: mistral
+  fallback: [groq, cerebras]
+  # rate limits intentionally left unset: verify actual Mistral free-tier
+  # RPM/RPD live before relying on any numbers here
+  rate_limits: {}
+
+image_gen:
+  # stock_photo runs first: cheaper than any generation tier, and only
+  # falls through to nano_banana/cloudflare_sdxl/local_flux when no stock
+  # photo (Pexels + Pixabay, pooled) clears the LLM relevance judge.
+  tiers: [stock_photo, nano_banana, cloudflare_sdxl, local_flux]
+  retries: {stock_photo: 1, nano_banana: 2, cloudflare_sdxl: 2, local_flux: 1}
+  stock:
+    # candidates fetched per provider (Pexels + Pixabay) before pooling
+    # and handing to the LLM judge
+    candidates_per_provider: 5
+  local_flux:
+    # unconfigured by default: local_flux stays a rare last-resort tier until
+    # these are set. Download FLUX.2-klein-4B-GGUF + a VAE first. The
+    # companion text-encoder files FLUX.2 actually needs (vs. FLUX.1's
+    # clip_l/t5xxl pair) are unconfirmed as of writing -- verify against
+    # stable-diffusion.cpp's FLUX.2 docs before relying on this tier.
+    diffusion_model_path: null
+    vae_path: null
+    clip_l_path: null
+    t5xxl_path: null
+    width: 512
+    height: 512
+    cfg_scale: 1.0
+    sample_steps: 4
+
+video:
+  aspect_ratio: "16:9"
+  captions: true
+  ken_burns: true
+  intro_path: null
+  outro_path: null
+  music_bed_path: null
+
+paths:
+  projects_root: "./projects"
+  insight_db: "./data/insights.db"
+
+wikipedia:
+  user_agent: "EssayGen/0.1 (contact: mohamed.a.kerkouri@gmail.com)"
+
+tts:
+  # built-in voice name (e.g. alba, anna, ...) OR a path/URL to a reference
+  # audio file to clone a custom voice from
+  voice: "alba"
+  # cloned-voice states get exported here as .safetensors so the reference
+  # audio only has to be processed once, not on every run
+  voice_cache_dir: "./data/voice_cache"
