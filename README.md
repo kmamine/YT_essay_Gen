@@ -17,9 +17,12 @@ thesis and script, TTS narration, a stock photo picked by an LLM judge,
 Ken Burns pan/zoom, burned-in captions, and a background music bed, all
 generated automatically from a single topic string ("Boudica"):
 
-<video src="demo/boudica-demo.mp4" controls width="480"></video>
+[![Click to watch the demo (with sound)](demo/thumbnail.jpg)](demo/boudica-demo.mp4)
 
-[Download / view boudica-demo.mp4](demo/boudica-demo.mp4)
+*Click the thumbnail to watch/download `boudica-demo.mp4` — GitHub doesn't
+inline-play videos from repo file paths, only ones uploaded through its own
+issue/PR attachment system, so this opens the file rather than playing
+in-page.*
 
 ## How it works
 
