@@ -63,6 +63,10 @@ def judge_best_candidate(
         return None
 
     for candidate in candidates:
-        if candidate.id == best_id:
+        # Live-verified: the LLM sometimes drops the "provider:" prefix and
+        # returns just the bare numeric suffix (e.g. "1" instead of
+        # "pexels:1") -- match on either form rather than silently treating
+        # that as "no match found".
+        if candidate.id == best_id or candidate.id.rsplit(":", 1)[-1] == best_id:
             return candidate
     return None

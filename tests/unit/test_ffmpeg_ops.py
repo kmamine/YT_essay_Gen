@@ -9,6 +9,7 @@ from essaygen.assembly.ffmpeg_ops import (
     build_concat_command,
     build_concat_file_content,
     build_image_clip_command,
+    build_music_mix_command,
     compute_caption_font_size,
     compute_wrap_width_chars,
     escape_filter_path,
@@ -151,6 +152,94 @@ def test_build_image_clip_command_without_ken_burns_uses_plain_scale():
     assert any("scale=1920:1080" in arg for arg in args)
 
 
+# Aspect-ratio-preserving fill: source images rarely match the output
+# aspect ratio exactly. Rather than stretching (distorting proportions) or
+# cropping (losing content), the image is scaled to fit entirely within
+# the frame and the leftover space is filled -- either with a blurred,
+# zoomed copy of the same image (default, the common Shorts/Stories look)
+# or with solid black bars.
+def test_build_image_clip_command_default_fill_mode_is_blur():
+    args = build_image_clip_command(
+        image_path=Path("images/sec_01_sub_01.png"),
+        audio_path=Path("audio/sec_01_sub_01.wav"),
+        output_path=Path("sections/sec_01_sub_01_clip.mp4"),
+        duration_sec=5.0,
+        width=1920,
+        height=1080,
+    )
+    filter_arg = args[args.index("-filter_complex") + 1]
+
+    assert "gblur" in filter_arg
+
+
+def test_build_image_clip_command_blur_fill_does_not_crop_or_stretch_the_foreground():
+    args = build_image_clip_command(
+        image_path=Path("images/sec_01_sub_01.png"),
+        audio_path=Path("audio/sec_01_sub_01.wav"),
+        output_path=Path("sections/sec_01_sub_01_clip.mp4"),
+        duration_sec=5.0,
+        width=1920,
+        height=1080,
+        fill_mode="blur",
+    )
+    filter_arg = args[args.index("-filter_complex") + 1]
+
+    # background layer: scaled to cover the frame (may crop), then blurred
+    assert "force_original_aspect_ratio=increase" in filter_arg
+    assert "gblur" in filter_arg
+    # foreground layer: scaled to fit entirely within the frame, no crop
+    assert "force_original_aspect_ratio=decrease" in filter_arg
+    assert "overlay" in filter_arg
+
+
+def test_build_image_clip_command_black_fill_pads_without_cropping_or_stretching():
+    args = build_image_clip_command(
+        image_path=Path("images/sec_01_sub_01.png"),
+        audio_path=Path("audio/sec_01_sub_01.wav"),
+        output_path=Path("sections/sec_01_sub_01_clip.mp4"),
+        duration_sec=5.0,
+        width=1920,
+        height=1080,
+        fill_mode="black",
+    )
+    filter_arg = args[args.index("-filter_complex") + 1]
+
+    assert "force_original_aspect_ratio=decrease" in filter_arg
+    assert "pad=" in filter_arg
+    assert "black" in filter_arg
+    assert "gblur" not in filter_arg
+
+
+def test_build_image_clip_command_without_ken_burns_still_preserves_aspect_ratio():
+    args = build_image_clip_command(
+        image_path=Path("images/sec_01_sub_01.png"),
+        audio_path=Path("audio/sec_01_sub_01.wav"),
+        output_path=Path("sections/sec_01_sub_01_clip.mp4"),
+        duration_sec=5.0,
+        width=1920,
+        height=1080,
+        ken_burns=False,
+        fill_mode="black",
+    )
+    filter_arg = args[args.index("-filter_complex") + 1]
+
+    assert "force_original_aspect_ratio=decrease" in filter_arg
+    assert "pad=" in filter_arg
+
+
+def test_build_image_clip_command_raises_for_unknown_fill_mode():
+    with pytest.raises(FatalError):
+        build_image_clip_command(
+            image_path=Path("images/sec_01_sub_01.png"),
+            audio_path=Path("audio/sec_01_sub_01.wav"),
+            output_path=Path("sections/sec_01_sub_01_clip.mp4"),
+            duration_sec=5.0,
+            width=1920,
+            height=1080,
+            fill_mode="bogus",
+        )
+
+
 def test_build_concat_file_content_uses_absolute_paths():
     # ffmpeg's concat demuxer resolves relative paths in the list file
     # relative to the list file's own directory, not the process cwd — using
@@ -186,6 +275,137 @@ def test_build_concat_command_includes_expected_args():
 
 def test_escape_filter_path_escapes_backslashes_and_colons():
     assert escape_filter_path("C:/Users/kerko/cue.txt") == "C\\:/Users/kerko/cue.txt"
+
+
+# Music bed mixing: the narration track (input 0) is never re-encoded away
+# from its original level. The music bed (input 1) is looped indefinitely
+# (it's typically much shorter than the video). Two mix modes are
+# supported: "constant" (default) mixes music at one fixed, quiet volume
+# for the whole runtime -- simple and predictable, since duck mode's
+# sidechain-compress behavior was live-reported as inconsistent (either
+# inaudible or overpowering). "duck" ducks the music under narration via
+# sidechaincompress and recovers it in the gaps, for when finer control is
+# wanted.
+def test_build_music_mix_command_loops_music_input():
+    args = build_music_mix_command(Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"))
+
+    assert args[0] == "ffmpeg"
+    assert str(Path("merged.mp4")) in args
+    assert str(Path("music.mp3")) in args
+    # -stream_loop -1 must precede the music input's own -i flag, not the video's
+    music_i_index = args.index(str(Path("music.mp3"))) - 1
+    video_i_index = args.index(str(Path("merged.mp4"))) - 1
+    assert args[music_i_index] == "-i"
+    assert args[video_i_index] == "-i"
+    assert video_i_index < music_i_index
+    assert "-stream_loop" in args
+    assert args[args.index("-stream_loop") + 1] == "-1"
+    assert video_i_index < args.index("-stream_loop") < music_i_index
+
+
+def test_build_music_mix_command_defaults_to_constant_volume_mode():
+    args = build_music_mix_command(Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"))
+
+    filter_complex = args[args.index("-filter_complex") + 1]
+    assert "sidechaincompress" not in filter_complex
+    assert "volume=" in filter_complex
+    assert "amix" in filter_complex
+
+
+def test_build_music_mix_command_constant_mode_mixes_at_one_fixed_volume():
+    args = build_music_mix_command(
+        Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"), mode="constant"
+    )
+
+    filter_complex = args[args.index("-filter_complex") + 1]
+    assert "sidechaincompress" not in filter_complex
+    assert "volume=" in filter_complex
+    assert "[0:a][music]amix" in filter_complex or "[0:a][music]" in filter_complex
+
+
+def test_build_music_mix_command_constant_mode_is_audible_not_too_quiet():
+    # Regression test: live-reported the original -22dB constant level as
+    # "too low" / inaudible against narration. Raised to -14dB (same base
+    # level duck mode uses before any sidechain reduction) -- pin a floor
+    # so a future tuning pass can't silently drift back toward inaudible.
+    args = build_music_mix_command(
+        Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"), mode="constant"
+    )
+
+    filter_complex = args[args.index("-filter_complex") + 1]
+    volume_str = filter_complex.split(",volume=")[1].split("dB")[0]
+    assert float(volume_str) >= -16.0
+
+
+def test_build_music_mix_command_disables_amix_auto_normalize():
+    # Live-verified real bug: ffmpeg's amix filter defaults to
+    # normalize=true, which auto-scales down input levels to prevent
+    # clipping -- silently undermining the volume= boost applied to the
+    # music track regardless of how high it's set. Measured -30.9dB max
+    # during a narration gap even with a -14dB pre-mix volume applied.
+    # normalize=0 must be set so our explicit volume control is honored.
+    for mode in ("constant", "duck"):
+        args = build_music_mix_command(
+            Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"), mode=mode
+        )
+        filter_complex = args[args.index("-filter_complex") + 1]
+        assert "amix" in filter_complex
+        assert "normalize=0" in filter_complex
+
+
+def test_build_music_mix_command_normalizes_source_loudness_before_mix_level():
+    # Live-verified real bug: different Freesound tracks have wildly
+    # different native recording levels -- one ambient drone track
+    # measured -43dB mean / -20dB max even completely unprocessed, well
+    # below a typical track's level. A fixed dB offset on top of that
+    # arbitrary native level lands nowhere close to audible. loudnorm must
+    # run first so the volume= offset means "this many dB under a
+    # consistent reference," not "this many dB under whatever level this
+    # particular track happened to be recorded at."
+    for mode in ("constant", "duck"):
+        args = build_music_mix_command(
+            Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"), mode=mode
+        )
+        filter_complex = args[args.index("-filter_complex") + 1]
+        assert "[1:a]loudnorm=" in filter_complex
+        # loudnorm must precede the volume= offset, not follow it
+        assert filter_complex.index("loudnorm=") < filter_complex.index("volume=")
+
+
+def test_build_music_mix_command_duck_mode_ducks_music_under_narration():
+    args = build_music_mix_command(
+        Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"), mode="duck"
+    )
+
+    filter_complex = args[args.index("-filter_complex") + 1]
+    assert "sidechaincompress" in filter_complex
+    assert "amix" in filter_complex
+    # the volume-shaped music label ([music], not the raw [1:a]) must be the
+    # signal being compressed, with narration ([0:a]) as the sidechain
+    # trigger -- feeding raw [1:a] into sidechaincompress would silently
+    # discard the volume-shaping step applied just before it
+    assert "volume=" in filter_complex
+    assert "[music][0:a]sidechaincompress" in filter_complex
+    assert "[0:a][ducked]amix" in filter_complex
+
+
+def test_build_music_mix_command_raises_for_unknown_mode():
+    with pytest.raises(FatalError):
+        build_music_mix_command(
+            Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"), mode="bogus"
+        )
+
+
+def test_build_music_mix_command_maps_video_copy_and_mixed_audio():
+    args = build_music_mix_command(Path("merged.mp4"), Path("music.mp3"), Path("out.mp4"))
+
+    assert "-map" in args
+    map_values = [args[i + 1] for i, a in enumerate(args) if a == "-map"]
+    assert "0:v" in map_values
+    assert any(v.startswith("[") for v in map_values)  # mixed audio label
+    assert args[args.index("-c:v") + 1] == "copy"
+    assert args[args.index("-c:a") + 1] == "aac"
+    assert args[-1] == str(Path("out.mp4"))
 
 
 def test_compute_caption_font_size_scales_with_height():

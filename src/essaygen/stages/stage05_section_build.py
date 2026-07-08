@@ -17,6 +17,7 @@ from essaygen.models.script import Script
 def build_section_build_stage(
     aspect_ratio: str = "16:9",
     ken_burns: bool = True,
+    fill_mode: str = "blur",
     probe_duration: Callable = probe_duration_sec,
     ffmpeg_runner: Callable = run_ffmpeg,
 ) -> StageDef:
@@ -52,6 +53,7 @@ def build_section_build_stage(
                         height=height,
                         ken_burns=ken_burns,
                         pan_variant=pan_variant,
+                        fill_mode=fill_mode,
                     )
                 )
                 clip_paths.append(clip_path)

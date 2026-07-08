@@ -21,11 +21,35 @@ _PAN_X_FRACTION = 0.12
 _PAN_Y_FRACTION = 0.08
 _PAN_DIRECTIONS = [(1, 1), (-1, 1), (1, -1), (-1, -1)]
 
+# Aspect-ratio-preserving fill: source images rarely match the output
+# aspect ratio exactly. "blur" (default) fills the leftover space with a
+# heavily blurred, cropped-to-cover copy of the same image -- the common
+# Shorts/Stories look. "black" pads with solid bars instead. Either way
+# the foreground image itself is scaled to fit entirely within the frame
+# (force_original_aspect_ratio=decrease), never cropped or stretched.
+_BLUR_SIGMA = 20
+
 
 def resolve_output_dimensions(aspect_ratio: str) -> tuple[int, int]:
     if aspect_ratio not in _ASPECT_RATIO_DIMENSIONS:
         raise FatalError(f"Unsupported aspect ratio: {aspect_ratio!r}")
     return _ASPECT_RATIO_DIMENSIONS[aspect_ratio]
+
+
+def _build_canvas_filter(width: int, height: int, fill_mode: str) -> str:
+    if fill_mode == "blur":
+        return (
+            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},gblur=sigma={_BLUR_SIGMA}[bg];"
+            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2[canvas]"
+        )
+    if fill_mode == "black":
+        return (
+            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black[canvas]"
+        )
+    raise FatalError(f"Unsupported image fill mode: {fill_mode!r}")
 
 
 def build_image_clip_command(
@@ -38,7 +62,10 @@ def build_image_clip_command(
     fps: int = 25,
     ken_burns: bool = True,
     pan_variant: int = 0,
+    fill_mode: str = "blur",
 ) -> list[str]:
+    canvas_filter = _build_canvas_filter(width, height, fill_mode)
+
     if ken_burns:
         total_frames = max(1, int(round(duration_sec * fps)))
         # Duration-adaptive rate: a fixed per-frame increment caps out early
@@ -50,14 +77,15 @@ def build_image_clip_command(
         pan_x = _PAN_X_FRACTION * pan_x_sign
         pan_y = _PAN_Y_FRACTION * pan_y_sign
         video_filter = (
-            f"scale={width * 4}:-1,"
+            f"{canvas_filter};"
+            f"[canvas]scale={width * 4}:-1,"
             f"zoompan=z='min(zoom+{zoom_increment:.6f},{_MAX_ZOOM})':"
             f"x='iw/2-(iw/zoom/2)+(iw*{pan_x:.4f}*on/{total_frames})':"
             f"y='ih/2-(ih/zoom/2)+(ih*{pan_y:.4f}*on/{total_frames})':"
             f"d={total_frames}:s={width}x{height}:fps={fps}"
         )
     else:
-        video_filter = f"scale={width}:{height},fps={fps}"
+        video_filter = f"{canvas_filter};[canvas]fps={fps}"
     return [
         "ffmpeg",
         "-y",
@@ -75,6 +103,83 @@ def build_image_clip_command(
         f"{duration_sec:.3f}",
         "-pix_fmt",
         "yuv420p",
+        "-c:a",
+        "aac",
+        "-shortest",
+        str(output_path),
+    ]
+
+
+# "constant" mode: one fixed volume for the whole runtime -- simple and
+# predictable, the default after live feedback that duck mode's sidechain
+# behavior read as either inaudible or overpowering depending on the
+# track. Originally -22dB, live-reported as too quiet to hear at all;
+# raised to -14dB (duck mode's own pre-ducking base level) so it's clearly
+# audible without ducking to compensate. "duck" mode: sidechain-compresses
+# the music under narration and lets it recover in the gaps.
+_MUSIC_CONSTANT_VOLUME_DB = -14.0
+_MUSIC_DUCK_BASE_VOLUME_DB = -14.0
+_DUCK_THRESHOLD = 0.05
+_DUCK_RATIO = 8
+_DUCK_ATTACK_MS = 5
+_DUCK_RELEASE_MS = 250
+
+# Live-verified real bug: different Freesound tracks have wildly different
+# native recording levels (one ambient drone track measured -43dB mean /
+# -20dB max even completely unprocessed). Normalizing to a consistent EBU
+# R128 loudness target before applying the volume= offset above means that
+# offset is relative to a fixed reference, not to whatever level a given
+# track happened to be recorded/mastered at.
+_MUSIC_LOUDNORM_TARGET_LUFS = -20
+_MUSIC_LOUDNORM_TRUE_PEAK = -2
+_MUSIC_LOUDNORM_LRA = 7
+_LOUDNORM_FILTER = (
+    f"loudnorm=I={_MUSIC_LOUDNORM_TARGET_LUFS}:TP={_MUSIC_LOUDNORM_TRUE_PEAK}:"
+    f"LRA={_MUSIC_LOUDNORM_LRA}"
+)
+
+
+def build_music_mix_command(
+    video_path: Path, music_path: Path, output_path: Path, mode: str = "constant"
+) -> list[str]:
+    # normalize=0 on amix: live-verified real bug -- ffmpeg's amix filter
+    # defaults to normalize=true, which auto-scales down input levels to
+    # prevent clipping, silently undermining the volume= boost above
+    # regardless of how high it's set (measured -30.9dB max during a
+    # narration gap even with -14dB pre-mix volume applied). Disabling it
+    # makes our explicit volume control actually take effect.
+    if mode == "constant":
+        filter_complex = (
+            f"[1:a]{_LOUDNORM_FILTER},volume={_MUSIC_CONSTANT_VOLUME_DB}dB[music];"
+            "[0:a][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
+        )
+    elif mode == "duck":
+        filter_complex = (
+            f"[1:a]{_LOUDNORM_FILTER},volume={_MUSIC_DUCK_BASE_VOLUME_DB}dB[music];"
+            f"[music][0:a]sidechaincompress=threshold={_DUCK_THRESHOLD}:ratio={_DUCK_RATIO}:"
+            f"attack={_DUCK_ATTACK_MS}:release={_DUCK_RELEASE_MS}[ducked];"
+            "[0:a][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
+        )
+    else:
+        raise FatalError(f"Unsupported music mix mode: {mode!r}")
+
+    return [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-stream_loop",
+        "-1",
+        "-i",
+        str(music_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "0:v",
+        "-map",
+        "[aout]",
+        "-c:v",
+        "copy",
         "-c:a",
         "aac",
         "-shortest",

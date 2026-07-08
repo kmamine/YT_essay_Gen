@@ -10,6 +10,15 @@ no manual editing required.
 Full stage-by-stage design lives in [Spec.md](Spec.md); operating rules and
 current build status are in [CLAUDE.md](CLAUDE.md).
 
+## Demo
+
+A real, unedited output from this pipeline — Wikipedia research, an LLM
+thesis and script, TTS narration, a stock photo picked by an LLM judge,
+Ken Burns pan/zoom, burned-in captions, and a background music bed, all
+generated automatically from a single topic string:
+
+![Demo clip: narrated, captioned video essay with Ken Burns pan/zoom over a Boudica statue](docs/assets/demo.gif)
+
 ## How it works
 
 ```mermaid
@@ -26,7 +35,7 @@ flowchart TD
     end
 
     E --> F["Section build\nKen Burns pan/zoom + audio sync (ffmpeg)"]
-    F --> G["Final merge\nconcat sections + burned-in captions"]
+    F --> G["Final merge\nconcat sections + music bed + burned-in captions"]
     G --> H(["final.mp4"])
     H -.manual.-> I["Upload to YouTube"]
 
@@ -64,7 +73,24 @@ flowchart LR
 The judge weighs candidates in priority order — a real, on-topic photo beats
 a generic illustration, which beats a same-era/culture "atmosphere" shot —
 and only falls through to generation when nothing in the stock catalogs
-clears the bar.
+clears the bar. Every image is scaled to fit the frame without cropping or
+stretching; any leftover space is filled with a blurred, zoomed copy of the
+same image by default (`video.image_fill_mode: blur`, or `black` for solid
+letterbox/pillarbox bars).
+
+## Background music, without the licensing headache
+
+An LLM turns the script's title and thesis into a short mood/genre query
+(e.g. "dark ambient" for a grim topic), searches the Freesound API filtered
+to CC0-licensed tracks (no attribution required, ever), then a second LLM
+call judges the results for tonal fit — so the bed is picked per project,
+not one fixed track reused everywhere. It's loudness-normalized first
+(ffmpeg `loudnorm`) so a quietly-mastered track doesn't end up inaudible,
+then mixed at a fixed, audible volume under the narration
+(`video.music.mode: constant` by default; `duck` sidechain-compresses it
+under speech instead, for finer control). Set `video.music_bed_path` in
+`config.yaml` to override with your own track; leave `FREESOUND_API_KEY`
+unset to skip music entirely.
 
 ## What's built vs. what's next
 
@@ -95,15 +121,12 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-Add your secrets to a `.env` file in the project root:
+Copy [`.env.example`](.env.example) to `.env` and fill in your secrets
+(Google AI Studio, Mistral, Pexels, Pixabay, Freesound are required;
+Groq/Cerebras/Cloudflare are optional fallback tiers):
 
-```
-GOOGLE_STUDIO_API_KEY=...
-MISTRAL_API_KEY=...
-LLM_MODEL=mistral-large-latest
-PEXELS_API_KEY=...
-PIXABAY_API_KEY=...
-# optional: GROQ_API_KEY, CEREBRAS_API_KEY, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
+```bash
+cp .env.example .env
 ```
 
 Pipeline parameters (image-gen tiers, aspect ratio, captions, Ken Burns,
@@ -130,4 +153,5 @@ pytest
 ## Stack
 
 Python 3.11+ · pydantic · Typer · httpx · ffmpeg · Wikipedia API · Mistral ·
-Pexels/Pixabay · Pocket TTS (Kyutai) · Cloudflare Workers AI · FLUX.2-klein
+Pexels/Pixabay · Freesound · Pocket TTS (Kyutai) · Cloudflare Workers AI ·
+FLUX.2-klein

@@ -13,6 +13,8 @@ from essaygen.providers.image.stock.pexels import PexelsClient
 from essaygen.providers.image.stock.pixabay import PixabayClient
 from essaygen.providers.image.stock.provider import StockPhotoProvider
 from essaygen.providers.llm.mistral import MistralProvider
+from essaygen.providers.music.freesound import FreesoundClient
+from essaygen.providers.music.provider import MusicBedProvider
 from essaygen.providers.tts.pocket_tts import PocketTTSProvider, resolve_voice_cache_path
 from essaygen.stages.stage01_research import build_research_stage
 from essaygen.stages.stage02_stance import build_stance_stage
@@ -55,6 +57,15 @@ def build_default_stages(config: PipelineConfig, secrets: Secrets) -> list[Stage
             sample_steps=config.image_gen.local_flux.sample_steps,
         ),
     ]
+    music_bed_provider = (
+        MusicBedProvider(
+            client=FreesoundClient(api_key=secrets.freesound_api_key),
+            llm=llm,
+            min_duration_sec=config.video.music.min_duration_sec,
+        )
+        if secrets.freesound_api_key
+        else None
+    )
     return [
         build_research_stage(user_agent=config.wikipedia.user_agent),
         build_stance_stage(llm),
@@ -62,10 +73,16 @@ def build_default_stages(config: PipelineConfig, secrets: Secrets) -> list[Stage
         build_tts_stage(tts),
         build_image_gen_stage(image_providers, retries=config.image_gen.retries),
         build_section_build_stage(
-            aspect_ratio=config.video.aspect_ratio, ken_burns=config.video.ken_burns
+            aspect_ratio=config.video.aspect_ratio,
+            ken_burns=config.video.ken_burns,
+            fill_mode=config.video.image_fill_mode,
         ),
         build_final_merge_stage(
-            captions=config.video.captions, aspect_ratio=config.video.aspect_ratio
+            captions=config.video.captions,
+            aspect_ratio=config.video.aspect_ratio,
+            music_bed_path=config.video.music_bed_path,
+            music_bed_provider=music_bed_provider,
+            music_mode=config.video.music.mode,
         ),
     ]
 

@@ -102,7 +102,15 @@ For each subsection, in parallel:
 ### 2.6 Final merge
 - Concatenate all section videos in order.
 - Burned-in captions, sourced from the script JSON's `narration` text.
-- Optional: intro/outro, background music bed.
+- Background music bed: a single CC0-licensed track (no attribution
+  required) is fetched once via the Freesound API and cached — not
+  re-queried per project, since a music bed doesn't need per-topic
+  freshness the way images do. Mixed under the narration with ffmpeg
+  `sidechaincompress` (ducks while speech plays, recovers in gaps)
+  rather than sitting at one fixed low volume throughout. An explicit
+  `video.music_bed_path` in config always overrides the fetched track;
+  the whole feature is skipped if no `FREESOUND_API_KEY` is configured.
+- Optional: intro/outro (not yet implemented).
 - Output aspect ratio (16:9 or 9:16) is a runtime parameter chosen per
   generation run, not fixed.
 - Output: final `.mp4`.
@@ -214,6 +222,7 @@ generation.
 | Image gen (fallback) | Cloudflare Workers AI (SDXL)   | ~100,000 free calls/day |
 | Image gen (fallback, quaternary) | FLUX.2-klein-4B-GGUF (local) | GGUF-quantized 4B model, CPU-only, slow (minutes/image) — last resort only |
 | TTS               | Pocket TTS (Kyutai)                | Local, CPU-only, no rate limit |
+| Music bed         | Freesound API (CC0 license filter) | Free, no attribution required for CC0 results; token-based auth, no OAuth needed for search + preview download; one track fetched once and cached, not per-project |
 | Video assembly    | ffmpeg                             | Local, CPU-bound (slowest step on low-power CPUs) |
 | Publish (upload)  | Manual (you upload)                | No API quota cost — pipeline stops at final .mp4 |
 | Metrics (views/retention/CTR) | YouTube Analytics API   | Separate product from Data API; OAuth from channel owner; own-channel videos only; negligible quota use at 1-2 videos/week |

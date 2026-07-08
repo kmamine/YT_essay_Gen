@@ -31,6 +31,15 @@ class StockConfig(BaseModel):
     candidates_per_provider: int = 5
 
 
+class MusicConfig(BaseModel):
+    # "constant": one fixed, quiet volume for the whole runtime (default --
+    # duck mode's sidechain behavior was live-reported as inconsistent,
+    # either inaudible or overpowering depending on the track). "duck":
+    # sidechain-compress the music under narration and recover it in gaps.
+    mode: str = "constant"
+    min_duration_sec: int = 60
+
+
 class ImageGenConfig(BaseModel):
     tiers: list[str] = Field(
         default_factory=lambda: ["stock_photo", "nano_banana", "cloudflare_sdxl", "local_flux"]
@@ -46,7 +55,13 @@ class VideoConfig(BaseModel):
     ken_burns: bool = True
     intro_path: str | None = None
     outro_path: str | None = None
+    # "blur": leftover space around a non-matching-aspect-ratio image is
+    # filled with a blurred, zoomed copy of the same image (no crop/
+    # stretch of the actual photo). "black": solid letterbox/pillarbox
+    # bars instead.
+    image_fill_mode: str = "blur"
     music_bed_path: str | None = None
+    music: MusicConfig = Field(default_factory=MusicConfig)
 
 
 class PathsConfig(BaseModel):
@@ -91,6 +106,7 @@ class Secrets(BaseSettings):
     cloudflare_api_token: str | None = None
     pexels_api_key: str | None = None
     pixabay_api_key: str | None = None
+    freesound_api_key: str | None = None
 
 
 def load_secrets(env_file: Path) -> Secrets:

@@ -126,6 +126,201 @@ def test_final_merge_skips_caption_burn_when_captions_disabled(paths, script):
     assert not paths.captions_srt.exists()
 
 
+def test_final_merge_mixes_music_bed_and_burns_captions(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    music_path = tmp_path / "bed.mp3"
+    music_path.write_bytes(b"fake-music")
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_path=str(music_path),
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    assert len(ffmpeg_calls) == 3  # concat + music mix + caption burn
+    music_mix_call = ffmpeg_calls[1]
+    assert str(music_path) in music_mix_call
+    assert "-filter_complex" in music_mix_call
+    caption_burn_call = ffmpeg_calls[2]
+    assert caption_burn_call[-1] == str(paths.final_mp4)
+    # caption burn must read from the music-mixed video, not the plain concat
+    burn_input = caption_burn_call[caption_burn_call.index("-i") + 1]
+    music_mix_output = music_mix_call[-1]
+    assert burn_input == music_mix_output
+
+
+def test_final_merge_mixes_music_bed_without_captions(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    music_path = tmp_path / "bed.mp3"
+    music_path.write_bytes(b"fake-music")
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=False,
+        music_bed_path=str(music_path),
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    assert len(ffmpeg_calls) == 2  # concat + music mix (mixing directly to final_mp4)
+    music_mix_call = ffmpeg_calls[1]
+    assert music_mix_call[-1] == str(paths.final_mp4)
+
+
+def test_final_merge_skips_music_mix_when_not_configured(paths, script):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_path=None,
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    assert len(ffmpeg_calls) == 2  # concat + caption burn only, no music mix call
+
+
+def test_final_merge_raises_fatal_error_when_music_bed_path_missing(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_path=str(tmp_path / "does_not_exist.mp3"),
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: None,
+    )
+
+    with pytest.raises(FatalError):
+        stage.run(ctx)
+
+
+class FakeMusicBedProvider:
+    def __init__(self, cached_path):
+        self.cached_path = cached_path
+        self.fetch_calls = []
+
+    def fetch_and_cache(self, cache_path, title, thesis):
+        self.fetch_calls.append((cache_path, title, thesis))
+        return self.cached_path
+
+
+def test_final_merge_fetches_and_mixes_music_via_provider_when_no_explicit_path(
+    paths, script, tmp_path
+):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    cached_music = tmp_path / "cached_bed.mp3"
+    cached_music.write_bytes(b"cached")
+    provider = FakeMusicBedProvider(cached_path=cached_music)
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_provider=provider,
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    # cache path is computed per-project (under the project's own root),
+    # not supplied externally -- and the script's title/thesis are passed
+    # through so the provider can pick a track that tonally fits this
+    # specific video, not a fixed generic query
+    assert len(provider.fetch_calls) == 1
+    cache_path, title, thesis = provider.fetch_calls[0]
+    assert cache_path == paths.root / "music_bed.mp3"
+    assert title == script.title
+    assert thesis == script.thesis
+    assert len(ffmpeg_calls) == 3  # concat + music mix + caption burn
+    music_mix_call = ffmpeg_calls[1]
+    assert str(cached_music) in music_mix_call
+
+
+def test_final_merge_skips_music_when_provider_finds_no_candidates(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    provider = FakeMusicBedProvider(cached_path=None)
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_provider=provider,
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    assert len(ffmpeg_calls) == 2  # concat + caption burn only, no music mix call
+
+
+def test_final_merge_prefers_explicit_music_bed_path_over_provider(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    explicit_music = tmp_path / "explicit_bed.mp3"
+    explicit_music.write_bytes(b"explicit")
+    provider = FakeMusicBedProvider(cached_path=tmp_path / "should_not_be_used.mp3")
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_path=str(explicit_music),
+        music_bed_provider=provider,
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    assert provider.fetch_calls == []
+    music_mix_call = ffmpeg_calls[1]
+    assert str(explicit_music) in music_mix_call
+
+
+def test_final_merge_passes_music_mode_to_mix_command(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    explicit_music = tmp_path / "explicit_bed.mp3"
+    explicit_music.write_bytes(b"explicit")
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=True,
+        music_bed_path=str(explicit_music),
+        music_mode="duck",
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    music_mix_call = ffmpeg_calls[1]
+    filter_complex = music_mix_call[music_mix_call.index("-filter_complex") + 1]
+    assert "sidechaincompress" in filter_complex
+
+
 def test_final_merge_raises_fatal_error_when_section_video_missing(paths, script):
     paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
     state = ProjectState(topic="Fall of Rome")

@@ -138,6 +138,19 @@ def test_judge_best_candidate_returns_matching_candidate(candidates):
     assert best is candidates[0]
 
 
+def test_judge_best_candidate_matches_when_llm_drops_id_prefix(candidates):
+    # Same bug class live-verified in the music judge: the LLM sometimes
+    # drops the "provider:" prefix and returns just the bare numeric
+    # suffix (e.g. "1" instead of "pexels:1"). Strict equality would then
+    # find no match and silently return None even though the LLM clearly
+    # meant that candidate.
+    llm = FakeLLM('{"best_id": "1"}')
+
+    best = judge_best_candidate(llm, "roman senate ruins", candidates)
+
+    assert best is candidates[0]
+
+
 def test_judge_best_candidate_returns_none_when_llm_finds_no_match(candidates):
     llm = FakeLLM('{"best_id": null}')
 

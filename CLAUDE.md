@@ -32,6 +32,13 @@ used to represent scripts.
   Image — confirmed zero free-tier quota) -> Cloudflare Workers AI (SDXL)
   -> local FLUX.2-klein-4B-GGUF (last resort).
 - **TTS**: Pocket TTS (Kyutai), local CPU, no rate limit.
+- **Music**: Freesound API, CC0-licensed tracks only (no attribution
+  required), a single track auto-fetched once and cached at
+  `paths.music_cache` (reused across all future videos — not re-queried
+  per project). Mixed under narration via ffmpeg `sidechaincompress`
+  (ducks under speech, recovers in gaps) rather than a fixed low volume.
+  Optional: skipped entirely if `FREESOUND_API_KEY` isn't set. An explicit
+  `video.music_bed_path` always overrides the fetched track.
 - **Assembly**: ffmpeg, local, CPU-bound — expect this to be the slowest
   step on low-power hardware (target dev machine: i5-U, no GPU).
 - **Publish**: manual — you upload to YouTube yourself. The pipeline
@@ -56,7 +63,9 @@ used to represent scripts.
 
 ## Current status
 Core pipeline (research -> stance -> script -> tts -> image_gen ->
-section_build -> final_merge) is implemented and unit-tested, with a live
-end-to-end run verified (real Wikipedia, Mistral, Pocket TTS, ffmpeg;
-placeholder images pending a working image-gen tier). Stages 7-11
+section_build -> final_merge) is implemented, unit-tested, and live
+end-to-end verified (real Wikipedia, Mistral, Pexels/Pixabay stock photo
+search + LLM judge, Pocket TTS, ffmpeg Ken Burns + captions, Freesound
+music bed) — producing a real captioned `final.mp4` with a mixed music
+track. Stages 7-11
 (publish tracking, insight store, feedback loop) are not yet built.

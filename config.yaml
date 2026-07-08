@@ -36,7 +36,21 @@ video:
   ken_burns: true
   intro_path: null
   outro_path: null
+  # "blur": leftover space around a non-matching-aspect-ratio image gets a
+  # blurred, zoomed copy of the same image as background (no crop/stretch
+  # of the actual photo). "black": solid letterbox/pillarbox bars instead.
+  image_fill_mode: "blur"
+  # manual override: if set, this exact file is used and Freesound search is
+  # skipped entirely. Leave null to auto-fetch + cache a CC0 track instead.
   music_bed_path: null
+  music:
+    # "constant": fixed quiet volume for the whole runtime (default --
+    # sidechain ducking was live-reported as inconsistent, either
+    # inaudible or overpowering depending on the track). "duck": sidechain-
+    # compress under narration and recover in the gaps.
+    mode: "constant"
+    # avoids short sound-effect-length results when searching Freesound
+    min_duration_sec: 60
 
 paths:
   projects_root: "./projects"

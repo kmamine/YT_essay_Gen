@@ -77,6 +77,26 @@ def test_section_build_stage_runs_ffmpeg_per_clip_and_concats_section(paths, scr
     assert ffmpeg_calls[2][-1] == str(paths.sections_dir / "sec_01.mp4")
 
 
+def test_section_build_stage_passes_fill_mode_through_to_clip_command(paths, script):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_subsection_media(paths, "sec_01_sub_01")
+    touch_subsection_media(paths, "sec_01_sub_02")
+    ffmpeg_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_section_build_stage(
+        fill_mode="black",
+        probe_duration=lambda path: 4.0,
+        ffmpeg_runner=lambda args: ffmpeg_calls.append(args),
+    )
+
+    stage.run(ctx)
+
+    clip_filter = ffmpeg_calls[0][ffmpeg_calls[0].index("-filter_complex") + 1]
+    assert "pad=" in clip_filter
+    assert "gblur" not in clip_filter
+
+
 def test_section_build_stage_varies_pan_direction_across_clips(paths, script):
     # Each clip should get a different Ken Burns pan variant so consecutive
     # subsections don't all pan in the exact same direction.
