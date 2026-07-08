@@ -53,8 +53,9 @@ video:
     min_duration_sec: 60
   thumbnail:
     # Pillow needs an explicit .ttf path. Set to null to disable
-    # thumbnail generation entirely.
-    font_path: "C:\\Windows\\Fonts\\arialbd.ttf"
+    # thumbnail generation entirely. Impact (not Arial Bold): the
+    # standard bold-condensed YouTube-thumbnail/meme-text look.
+    font_path: "C:\\Windows\\Fonts\\impact.ttf"
 
 paths:
   projects_root: "./projects"

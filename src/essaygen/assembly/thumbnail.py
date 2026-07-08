@@ -15,8 +15,12 @@ _DEFAULT_HEIGHT = 720
 _GRADIENT_HEIGHT_FRACTION = 0.5
 _GRADIENT_MAX_ALPHA = 190
 
-_TEXT_FONT_SIZE_FRACTION = 0.09
-_TEXT_STROKE_WIDTH_FRACTION = 0.006
+# Live-reported: the original size/stroke read as visually flat, not
+# punchy enough for a thumbnail meant to stand out in a crowded feed.
+# Raised both, and render_thumbnail now uppercases text by default --
+# standard YouTube thumbnail convention (see to_thumbnail_display_text).
+_TEXT_FONT_SIZE_FRACTION = 0.13
+_TEXT_STROKE_WIDTH_FRACTION = 0.01
 _TEXT_MARGIN_FRACTION = 0.06
 
 # Only drawn when play_button=True (e.g. embedding as a static link on a
@@ -33,13 +37,24 @@ def build_thumbnail_hook_prompt(title: str, thesis: str) -> str:
         "attention-grabbing, readable at a glance in a crowded feed. This "
         "is different from the video's actual title; it should tease the "
         "core claim or a provocative angle, not restate the title "
-        'verbatim. Respond ONLY with JSON matching this shape: '
-        '{"hook": "<3-6 word hook>"}'
+        "verbatim. Use curiosity-gap phrasing: withhold the subject's "
+        "actual name and refer to them indirectly ('this woman', 'this "
+        "man', 'this decision', 'this mistake') so the hook creates an "
+        "itch to click rather than just stating a fact. For example, for "
+        "a video about Boudica's failed rebellion, prefer \"This Woman "
+        'Doomed Britain" over "Boudica Doomed Britain" -- naming the '
+        "subject outright is flatter and less provocative than making the "
+        'reader want to find out who. Respond ONLY with JSON matching '
+        'this shape: {"hook": "<3-6 word hook>"}'
     )
 
 
 def parse_thumbnail_hook_response(raw: str) -> str:
     return extract_json_object(raw)["hook"]
+
+
+def to_thumbnail_display_text(hook_text: str) -> str:
+    return hook_text.upper()
 
 
 def _cover_crop(img: Image.Image, width: int, height: int) -> Image.Image:
@@ -133,7 +148,7 @@ def render_thumbnail(
     font = ImageFont.truetype(str(font_path), font_size)
     stroke_width = max(1, int(height * _TEXT_STROKE_WIDTH_FRACTION))
     margin = int(width * _TEXT_MARGIN_FRACTION)
-    lines = _wrap_text(hook_text, font, width - 2 * margin, draw)
+    lines = _wrap_text(to_thumbnail_display_text(hook_text), font, width - 2 * margin, draw)
 
     line_height = font_size + stroke_width * 2 + 6
     total_text_height = line_height * len(lines)

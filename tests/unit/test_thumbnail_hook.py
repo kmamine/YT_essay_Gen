@@ -24,6 +24,19 @@ def test_build_thumbnail_hook_prompt_instructs_short_punchy_length():
     assert "thumbnail" in lowered
 
 
+def test_build_thumbnail_hook_prompt_instructs_curiosity_gap_phrasing():
+    # Live-reported: "Boudica Doomed Britain" (naming the subject outright)
+    # read as flat/not provocative enough. A curiosity-gap hook that
+    # withholds the subject's name (e.g. "This Woman Doomed Britain")
+    # creates the itch to click that a straightforwardly-named subject
+    # doesn't -- classic YouTube thumbnail technique.
+    prompt = build_thumbnail_hook_prompt(title="t", thesis="t")
+
+    lowered = prompt.lower()
+    assert "curiosity" in lowered
+    assert "this woman doomed britain" in lowered
+
+
 def test_parse_thumbnail_hook_response_extracts_hook_field():
     assert parse_thumbnail_hook_response('{"hook": "Rome\'s Fatal Mistake"}') == "Rome's Fatal Mistake"
 

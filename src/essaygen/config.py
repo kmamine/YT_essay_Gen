@@ -36,7 +36,10 @@ class ThumbnailConfig(BaseModel):
     # resolves a default font via fontconfig). Windows-only default,
     # matching this project's current target dev machine (see Spec.md
     # hardware notes) -- set to null to disable thumbnail generation.
-    font_path: str | None = r"C:\Windows\Fonts\arialbd.ttf"
+    # Impact (not Arial Bold): live-reported the original text style as
+    # visually flat -- Impact's bold condensed weight is the standard
+    # YouTube-thumbnail/meme-text look, reads as punchier at a glance.
+    font_path: str | None = r"C:\Windows\Fonts\impact.ttf"
 
 
 class MusicConfig(BaseModel):

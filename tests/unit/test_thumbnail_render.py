@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from essaygen.assembly.thumbnail import render_thumbnail
+from essaygen.assembly.thumbnail import render_thumbnail, to_thumbnail_display_text
 from essaygen.core.errors import FatalError
 
 
@@ -79,3 +79,23 @@ def test_render_thumbnail_raises_fatal_error_when_font_missing(source_image, tmp
 
     with pytest.raises(FatalError):
         render_thumbnail(source_image, "Hook", output_path, missing_font)
+
+
+def test_to_thumbnail_display_text_uppercases():
+    # Live-reported: the original mixed-case rendering read as visually
+    # flat. All-caps is the standard YouTube thumbnail convention for
+    # maximum punch and legibility at small sizes.
+    assert to_thumbnail_display_text("This Woman Doomed Britain") == "THIS WOMAN DOOMED BRITAIN"
+
+
+def test_render_thumbnail_text_is_bold_and_large_enough_to_read_at_a_glance(
+    source_image, font_path, tmp_path
+):
+    # Regression test: live-reported the original text as too small/thin
+    # to read as an attention-grabbing thumbnail. Pin a floor on both the
+    # font size and stroke width (as fractions of frame height) so a
+    # future tuning pass can't silently drift back toward flat/small text.
+    from essaygen.assembly.thumbnail import _TEXT_FONT_SIZE_FRACTION, _TEXT_STROKE_WIDTH_FRACTION
+
+    assert _TEXT_FONT_SIZE_FRACTION >= 0.11
+    assert _TEXT_STROKE_WIDTH_FRACTION >= 0.008
