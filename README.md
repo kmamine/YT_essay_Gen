@@ -10,15 +10,6 @@ no manual editing required.
 Full stage-by-stage design lives in [Spec.md](Spec.md); operating rules and
 current build status are in [CLAUDE.md](CLAUDE.md).
 
-## Demo
-
-A real, unedited output from this pipeline — Wikipedia research, an LLM
-thesis and script, TTS narration, a stock photo picked by an LLM judge,
-Ken Burns pan/zoom, burned-in captions, and a background music bed, all
-generated automatically from a single topic string:
-
-![Demo clip: narrated, captioned video essay with Ken Burns pan/zoom over a Boudica statue](docs/assets/demo.gif)
-
 ## How it works
 
 ```mermaid
