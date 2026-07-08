@@ -83,6 +83,8 @@ def build_default_stages(config: PipelineConfig, secrets: Secrets) -> list[Stage
             music_bed_path=config.video.music_bed_path,
             music_bed_provider=music_bed_provider,
             music_mode=config.video.music.mode,
+            llm=llm,
+            thumbnail_font_path=config.video.thumbnail.font_path,
         ),
     ]
 

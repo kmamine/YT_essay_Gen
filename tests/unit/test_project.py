@@ -28,6 +28,7 @@ def test_project_paths_resolve_under_slug_directory(tmp_path):
     assert paths.sections_dir == tmp_path / "fall-of-rome" / "sections"
     assert paths.final_mp4 == tmp_path / "fall-of-rome" / "final.mp4"
     assert paths.metadata_json == tmp_path / "fall-of-rome" / "metadata.json"
+    assert paths.thumbnail_jpg == tmp_path / "fall-of-rome" / "thumbnail.jpg"
     assert paths.video_id_txt == tmp_path / "fall-of-rome" / "video_id.txt"
     assert paths.tracking_dir == tmp_path / "fall-of-rome" / "tracking"
     assert paths.insight_json == tmp_path / "fall-of-rome" / "insight.json"

@@ -59,6 +59,10 @@ class ProjectPaths:
         return self.root / "metadata.json"
 
     @property
+    def thumbnail_jpg(self) -> Path:
+        return self.root / "thumbnail.jpg"
+
+    @property
     def video_id_txt(self) -> Path:
         return self.root / "video_id.txt"
 

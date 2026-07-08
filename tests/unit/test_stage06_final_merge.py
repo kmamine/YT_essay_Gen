@@ -321,6 +321,89 @@ def test_final_merge_passes_music_mode_to_mix_command(paths, script, tmp_path):
     assert "sidechaincompress" in filter_complex
 
 
+class FakeLLM:
+    def __init__(self, response):
+        self.response = response
+        self.prompts = []
+
+    def generate(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.response
+
+
+def test_final_merge_generates_thumbnail_from_first_subsection_image(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    (paths.images_dir / "sec_01_sub_01.png").write_bytes(b"fake-image")
+    llm = FakeLLM('{"hook": "Rome\'s Fatal Mistake"}')
+    render_calls = []
+    font_path = tmp_path / "font.ttf"
+    font_path.write_bytes(b"fake-font")
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=False,
+        llm=llm,
+        thumbnail_font_path=str(font_path),
+        thumbnail_renderer=lambda *args, **kwargs: render_calls.append((args, kwargs)),
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: None,
+    )
+
+    stage.run(ctx)
+
+    assert len(render_calls) == 1
+    args, kwargs = render_calls[0]
+    assert args[0] == paths.images_dir / "sec_01_sub_01.png"
+    assert args[1] == "Rome's Fatal Mistake"
+    assert args[2] == paths.thumbnail_jpg
+    assert args[3] == font_path
+    assert any("t" in p for p in llm.prompts)  # hook prompt was actually sent
+
+
+def test_final_merge_skips_thumbnail_when_llm_not_provided(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    (paths.images_dir / "sec_01_sub_01.png").write_bytes(b"fake-image")
+    render_calls = []
+    font_path = tmp_path / "font.ttf"
+    font_path.write_bytes(b"fake-font")
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=False,
+        thumbnail_font_path=str(font_path),
+        thumbnail_renderer=lambda *args, **kwargs: render_calls.append((args, kwargs)),
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: None,
+    )
+
+    stage.run(ctx)
+
+    assert render_calls == []
+
+
+def test_final_merge_skips_thumbnail_when_font_path_not_provided(paths, script, tmp_path):
+    paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
+    touch_section_videos(paths, script)
+    (paths.images_dir / "sec_01_sub_01.png").write_bytes(b"fake-image")
+    llm = FakeLLM('{"hook": "Hook"}')
+    render_calls = []
+    state = ProjectState(topic="Fall of Rome")
+    ctx = RunContext(paths=paths, state=state)
+    stage = build_final_merge_stage(
+        captions=False,
+        llm=llm,
+        thumbnail_renderer=lambda *args, **kwargs: render_calls.append((args, kwargs)),
+        probe_duration=lambda path: 3.0,
+        ffmpeg_runner=lambda args: None,
+    )
+
+    stage.run(ctx)
+
+    assert render_calls == []
+
+
 def test_final_merge_raises_fatal_error_when_section_video_missing(paths, script):
     paths.script_json.write_text(script.model_dump_json(), encoding="utf-8")
     state = ProjectState(topic="Fall of Rome")

@@ -31,6 +31,14 @@ class StockConfig(BaseModel):
     candidates_per_provider: int = 5
 
 
+class ThumbnailConfig(BaseModel):
+    # Pillow needs an explicit .ttf path (unlike ffmpeg's drawtext, which
+    # resolves a default font via fontconfig). Windows-only default,
+    # matching this project's current target dev machine (see Spec.md
+    # hardware notes) -- set to null to disable thumbnail generation.
+    font_path: str | None = r"C:\Windows\Fonts\arialbd.ttf"
+
+
 class MusicConfig(BaseModel):
     # "constant": one fixed, quiet volume for the whole runtime (default --
     # duck mode's sidechain behavior was live-reported as inconsistent,
@@ -62,6 +70,7 @@ class VideoConfig(BaseModel):
     image_fill_mode: str = "blur"
     music_bed_path: str | None = None
     music: MusicConfig = Field(default_factory=MusicConfig)
+    thumbnail: ThumbnailConfig = Field(default_factory=ThumbnailConfig)
 
 
 class PathsConfig(BaseModel):

@@ -13,6 +13,11 @@ from essaygen.assembly.ffmpeg_ops import (
     run_ffmpeg,
     write_cue_textfiles,
 )
+from essaygen.assembly.thumbnail import (
+    build_thumbnail_hook_prompt,
+    parse_thumbnail_hook_response,
+    render_thumbnail,
+)
 from essaygen.core.errors import FatalError
 from essaygen.core.project import ProjectPaths
 from essaygen.core.runner import RunContext, StageDef
@@ -25,6 +30,9 @@ def build_final_merge_stage(
     music_bed_path: str | None = None,
     music_bed_provider: Any = None,
     music_mode: str = "constant",
+    llm: Any = None,
+    thumbnail_font_path: str | None = None,
+    thumbnail_renderer: Callable = render_thumbnail,
     probe_duration: Callable = probe_duration_sec,
     ffmpeg_runner: Callable = run_ffmpeg,
 ) -> StageDef:
@@ -93,6 +101,17 @@ def build_final_merge_stage(
             ffmpeg_runner(
                 build_caption_burn_command(video_source, filter_script_path, ctx.paths.final_mp4)
             )
+
+        if llm is not None and thumbnail_font_path:
+            first_subsection = script.sections[0].subsections[0]
+            first_image_path = ctx.paths.images_dir / f"{first_subsection.id}.png"
+            if first_image_path.exists():
+                hook = parse_thumbnail_hook_response(
+                    llm.generate(build_thumbnail_hook_prompt(script.title, script.thesis))
+                )
+                thumbnail_renderer(
+                    first_image_path, hook, ctx.paths.thumbnail_jpg, Path(thumbnail_font_path)
+                )
 
         ctx.paths.metadata_json.write_text(
             script.youtube_metadata.model_dump_json(indent=2), encoding="utf-8"
